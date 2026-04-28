@@ -8,11 +8,14 @@ import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import { MailDetail } from "@/components/mail-detail";
+import { CreateAddressDialog } from "@/components/create-address-dialog";
 
 export default function Home() {
   const { ready, addresses, updateAddresses } = useKukuInit();
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>();
   const [isCopied, setIsCopied] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const { toast } = useToast();
 
   const [selectedMail, setSelectedMail] = useState<{ num: string; key: string; subject: string; from: string; receivedAt: string } | null>(null);
@@ -26,11 +29,27 @@ export default function Home() {
   const { mutate: generate, isPending: isGenerating } = useGenerateAddress((newAddr) => {
     updateAddresses();
     setSelectedAddress(newAddr.address);
+    setCreateOpen(false);
+    setCreateError(null);
     toast({
       title: "Alamat email dibuat",
       description: "Email sementara baru siap digunakan.",
     });
   });
+
+  const handleCreate = (options: { domain?: string; username?: string }) => {
+    setCreateError(null);
+    generate(options, {
+      onError: (err) => {
+        setCreateError(err instanceof Error ? err.message : "Gagal membuat email");
+      },
+    });
+  };
+
+  const openCreateDialog = () => {
+    setCreateError(null);
+    setCreateOpen(true);
+  };
 
   const { data: inboxData, isFetching: isPolling, refetch } = useInbox(selectedAddress);
 
@@ -55,19 +74,33 @@ export default function Home() {
 
   if (addresses.length === 0) {
     return (
-      <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in duration-700">
-        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6">
-          <Mail className="w-10 h-10 text-primary" />
+      <>
+        <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in duration-700">
+          <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+            <MailIcon className="w-10 h-10 text-primary" />
+          </div>
+          <h1 className="text-3xl font-bold tracking-tight mb-3">Selamat Datang di InstaMail</h1>
+          <p className="text-muted-foreground max-w-md mb-8 text-lg">
+            Hindari spam dan jaga privasi Anda. Buat alamat email sementara secara instan untuk mendaftar di situs yang tidak Anda percayai.
+          </p>
+          <Button
+            size="lg"
+            className="h-14 px-8 text-lg rounded-full"
+            onClick={openCreateDialog}
+            data-testid="button-create-empty"
+          >
+            <Plus className="w-5 h-5 mr-2" />
+            Buat Email Baru
+          </Button>
         </div>
-        <h1 className="text-3xl font-bold tracking-tight mb-3">Selamat Datang di InstaMail</h1>
-        <p className="text-muted-foreground max-w-md mb-8 text-lg">
-          Hindari spam dan jaga privasi Anda. Buat alamat email sementara secara instan untuk mendaftar di situs yang tidak Anda percayai.
-        </p>
-        <Button size="lg" className="h-14 px-8 text-lg rounded-full" onClick={() => generate()} disabled={isGenerating}>
-          {isGenerating ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Plus className="w-5 h-5 mr-2" />}
-          Buat Email Baru
-        </Button>
-      </div>
+        <CreateAddressDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          onCreate={handleCreate}
+          isPending={isGenerating}
+          errorMessage={createError}
+        />
+      </>
     );
   }
 
@@ -96,13 +129,14 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <Button 
-          variant="outline" 
-          className="w-full mt-4 border-dashed" 
-          onClick={() => generate()} 
+        <Button
+          variant="outline"
+          className="w-full mt-4 border-dashed"
+          onClick={openCreateDialog}
           disabled={isGenerating}
+          data-testid="button-add-address"
         >
-          {isGenerating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+          <Plus className="w-4 h-4 mr-2" />
           Tambah Alamat
         </Button>
       </div>
@@ -207,7 +241,7 @@ export default function Home() {
         </div>
       </div>
 
-      <MailDetail 
+      <MailDetail
         num={selectedMail?.num || null}
         mailKey={selectedMail?.key || null}
         subject={selectedMail?.subject || ""}
@@ -215,13 +249,30 @@ export default function Home() {
         receivedAt={selectedMail?.receivedAt || ""}
         onClose={() => setSelectedMail(null)}
       />
+
+      <CreateAddressDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreate={handleCreate}
+        isPending={isGenerating}
+        errorMessage={createError}
+      />
     </div>
   );
 }
 
-function Mail({ className }: { className?: string }) {
+function MailIcon({ className }: { className?: string }) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinelinejoin="round" className={className}>
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
       <rect width="20" height="16" x="2" y="4" rx="2" />
       <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
     </svg>

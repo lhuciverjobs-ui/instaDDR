@@ -172,12 +172,26 @@ router.post("/kuku/session", async (req, res): Promise<void> => {
   }
 });
 
-router.post("/kuku/address", async (req, res): Promise<void> => {
-  const session = (req.body && typeof req.body === "object" && "session" in req.body
-    ? (req.body as { session?: KukuSession }).session
-    : undefined);
+type AddressRequestBody = {
+  session?: KukuSession;
+  domain?: string;
+  username?: string;
+};
 
-  let { jar, csrf } = jarFromSession(session);
+function isValidUsername(s: string): boolean {
+  return /^[a-z0-9._-]{1,32}$/i.test(s);
+}
+
+function isValidDomain(s: string): boolean {
+  return /^[a-z0-9.-]{2,64}\.[a-z]{2,12}$/i.test(s);
+}
+
+router.post("/kuku/address", async (req, res): Promise<void> => {
+  const body = (req.body && typeof req.body === "object"
+    ? (req.body as AddressRequestBody)
+    : {}) as AddressRequestBody;
+
+  let { jar, csrf } = jarFromSession(body.session);
 
   if (!csrf) {
     const fresh = await bootstrapSession();
@@ -190,10 +204,37 @@ router.post("/kuku/address", async (req, res): Promise<void> => {
     return;
   }
 
-  const url =
-    `${KUKU_BASE}/index.php?action=addMailAddrByAuto` +
-    `&csrf_token_check=${encodeURIComponent(csrf)}` +
-    `&by_system=1&nopost=1`;
+  const domain = typeof body.domain === "string" ? body.domain.trim() : "";
+  const username = typeof body.username === "string" ? body.username.trim() : "";
+
+  let url: string;
+
+  if (domain) {
+    if (!isValidDomain(domain)) {
+      res.status(400).json({ error: "Invalid domain" });
+      return;
+    }
+    if (username && !isValidUsername(username)) {
+      res
+        .status(400)
+        .json({ error: "Username only allows letters, numbers, dot, underscore, hyphen (max 32)" });
+      return;
+    }
+    const finalUser =
+      username || `u${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+    url =
+      `${KUKU_BASE}/index.php?action=addMailAddrByManual` +
+      `&csrf_token_check=${encodeURIComponent(csrf)}` +
+      `&by_system=1&nopost=1` +
+      `&newdomain=${encodeURIComponent(domain)}` +
+      `&newuser=${encodeURIComponent(finalUser)}` +
+      `&recaptcha_token=`;
+  } else {
+    url =
+      `${KUKU_BASE}/index.php?action=addMailAddrByAuto` +
+      `&csrf_token_check=${encodeURIComponent(csrf)}` +
+      `&by_system=1&nopost=1`;
+  }
 
   const upstream = await curlFetch(url, { cookieHeader: cookieHeader(jar) });
 
@@ -204,9 +245,10 @@ router.post("/kuku/address", async (req, res): Promise<void> => {
   if (!text.startsWith("OK:")) {
     req.log.warn(
       { status: upstream.status, text: text.slice(0, 200) },
-      "addMailAddrByAuto failed",
+      "addMailAddr failed",
     );
-    res.status(502).json({ error: text || "Failed to create address" });
+    const cleaned = text.replace(/^NG:\s*/i, "");
+    res.status(502).json({ error: cleaned || "Failed to create address" });
     return;
   }
 
@@ -216,6 +258,75 @@ router.post("/kuku/address", async (req, res): Promise<void> => {
     address,
     session: { cookie: cookieHeader(jar), csrf },
   });
+});
+
+type DomainEntry = { domain: string; isNew: boolean };
+
+let cachedDomains: { at: number; entries: DomainEntry[] } | null = null;
+const DOMAIN_CACHE_MS = 10 * 60 * 1000;
+
+function parseDomains(html: string): DomainEntry[] {
+  const seen = new Set<string>();
+  const entries: DomainEntry[] = [];
+  const regex =
+    /name="input_manualmaildomain"[^>]*value="([a-z0-9.-]+\.[a-z]{2,12})"[^>]*>([\s\S]{0,400}?)<\/label>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(html)) !== null) {
+    const domain = (m[1] ?? "").toLowerCase();
+    if (!domain || seen.has(domain)) continue;
+    seen.add(domain);
+    const isNew = /NEW!/i.test(m[2] ?? "");
+    entries.push({ domain, isNew });
+  }
+  if (entries.length === 0) {
+    // Looser fallback: any radio with a kuku-style domain value
+    const fallback = /name="input_manualmaildomain"[^>]*value="([a-z0-9.-]+\.[a-z]{2,12})"/gi;
+    let f: RegExpExecArray | null;
+    while ((f = fallback.exec(html)) !== null) {
+      const d = (f[1] ?? "").toLowerCase();
+      if (!d || seen.has(d)) continue;
+      seen.add(d);
+      entries.push({ domain: d, isNew: false });
+    }
+  }
+  return entries;
+}
+
+router.get("/kuku/domains", async (req, res): Promise<void> => {
+  const force = req.query.refresh === "1";
+  const now = Date.now();
+  if (!force && cachedDomains && now - cachedDomains.at < DOMAIN_CACHE_MS) {
+    res.json({ domains: cachedDomains.entries, cached: true });
+    return;
+  }
+
+  let { jar, csrf } = readSessionFromHeader(req);
+  if (!csrf) {
+    const fresh = await bootstrapSession();
+    jar = fresh.jar;
+    csrf = fresh.csrf;
+  }
+
+  const upstream = await curlFetch(`${KUKU_BASE}/index.php`, {
+    cookieHeader: cookieHeader(jar),
+  });
+
+  const entries = parseDomains(upstream.body);
+  if (entries.length === 0) {
+    req.log.warn(
+      { bodyLength: upstream.body.length, status: upstream.status },
+      "Failed to parse any domains",
+    );
+    if (cachedDomains) {
+      res.json({ domains: cachedDomains.entries, cached: true, stale: true });
+      return;
+    }
+    res.status(502).json({ error: "No domains found" });
+    return;
+  }
+
+  cachedDomains = { at: now, entries };
+  res.json({ domains: entries, cached: false });
 });
 
 const HTML_ENTITIES: Record<string, string> = {

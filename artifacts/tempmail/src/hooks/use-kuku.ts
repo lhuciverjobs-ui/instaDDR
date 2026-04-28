@@ -5,8 +5,10 @@ import {
   generateAddress,
   fetchInbox,
   fetchMailDetail,
+  fetchDomains,
   getAddresses,
   KukuAddress,
+  GenerateAddressOptions,
 } from "../lib/kuku";
 
 export function useKukuInit() {
@@ -29,11 +31,19 @@ export function useGenerateAddress(onSuccess?: (address: KukuAddress) => void) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: generateAddress,
+    mutationFn: (options: GenerateAddressOptions = {}) => generateAddress(options),
     onSuccess: (newAddress) => {
       queryClient.invalidateQueries();
       onSuccess?.(newAddress);
     },
+  });
+}
+
+export function useDomains() {
+  return useQuery({
+    queryKey: ["kuku", "domains"],
+    queryFn: fetchDomains,
+    staleTime: 10 * 60 * 1000,
   });
 }
 
