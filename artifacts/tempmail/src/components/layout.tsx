@@ -15,20 +15,31 @@ export function Layout({ children }: { children: ReactNode }) {
             </div>
             <span className="font-bold tracking-tight text-lg">InstaMail</span>
           </Link>
-          <nav className="flex items-center gap-6 text-sm font-medium">
+          <nav className="flex items-center gap-4 sm:gap-6 text-sm font-medium">
             <Link
               href="/"
               className={`transition-colors hover:text-foreground ${
                 location === "/" ? "text-foreground" : "text-muted-foreground"
               }`}
+              data-testid="nav-inbox"
             >
               Kotak Masuk
+            </Link>
+            <Link
+              href="/docs"
+              className={`transition-colors hover:text-foreground font-mono ${
+                location === "/docs" ? "text-foreground" : "text-muted-foreground"
+              }`}
+              data-testid="nav-api"
+            >
+              API
             </Link>
             <Link
               href="/about"
               className={`transition-colors hover:text-foreground ${
                 location === "/about" ? "text-foreground" : "text-muted-foreground"
               }`}
+              data-testid="nav-about"
             >
               Tentang
             </Link>

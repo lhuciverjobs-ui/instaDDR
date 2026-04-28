@@ -6,6 +6,7 @@ export interface KukuSession {
 export interface KukuAddress {
   address: string;
   createdAt: string;
+  alias?: string;
 }
 
 export interface KukuMailMeta {
@@ -70,8 +71,23 @@ export function getAddresses(): KukuAddress[] {
 
 function addAddress(address: string) {
   const current = getAddresses();
-  const entry = { address, createdAt: new Date().toISOString() };
+  if (current.some((a) => a.address === address)) return;
+  const entry: KukuAddress = { address, createdAt: new Date().toISOString() };
   localStorage.setItem(ADDRESSES_KEY, JSON.stringify([entry, ...current]));
+}
+
+export function setAddressAlias(address: string, alias: string) {
+  const current = getAddresses();
+  const next = current.map((a) =>
+    a.address === address ? { ...a, alias: alias.trim() || undefined } : a,
+  );
+  localStorage.setItem(ADDRESSES_KEY, JSON.stringify(next));
+}
+
+export function removeAddress(address: string) {
+  const current = getAddresses();
+  const next = current.filter((a) => a.address !== address);
+  localStorage.setItem(ADDRESSES_KEY, JSON.stringify(next));
 }
 
 async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

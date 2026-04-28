@@ -3,12 +3,13 @@ import { useKukuInit, useGenerateAddress, useInbox } from "@/hooks/use-kuku";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, RefreshCw, Plus, Check, Inbox, ChevronRight } from "lucide-react";
+import { Loader2, Copy, RefreshCw, Plus, Check, Inbox, ChevronRight, MoreHorizontal } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import { MailDetail } from "@/components/mail-detail";
 import { CreateAddressDialog } from "@/components/create-address-dialog";
+import { AddressActionsDialog } from "@/components/address-actions-dialog";
 
 export default function Home() {
   const { ready, addresses, updateAddresses } = useKukuInit();
@@ -16,6 +17,8 @@ export default function Home() {
   const [isCopied, setIsCopied] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [actionsAddress, setActionsAddress] = useState<string | null>(null);
   const { toast } = useToast();
 
   const [selectedMail, setSelectedMail] = useState<{ num: string; key: string; subject: string; from: string; receivedAt: string } | null>(null);
@@ -31,10 +34,8 @@ export default function Home() {
     setSelectedAddress(newAddr.address);
     setCreateOpen(false);
     setCreateError(null);
-    toast({
-      title: "Alamat email dibuat",
-      description: "Email sementara baru siap digunakan.",
-    });
+    setActionsAddress(newAddr.address);
+    setActionsOpen(true);
   });
 
   const handleCreate = (options: { domain?: string; username?: string }) => {
@@ -100,6 +101,22 @@ export default function Home() {
           isPending={isGenerating}
           errorMessage={createError}
         />
+        {actionsAddress && (
+          <AddressActionsDialog
+            open={actionsOpen}
+            onOpenChange={setActionsOpen}
+            address={actionsAddress}
+            onCopy={() => {
+              navigator.clipboard.writeText(actionsAddress);
+              toast({
+                title: "Berhasil disalin",
+                description: "Alamat email telah disalin.",
+              });
+            }}
+            onCreateNew={openCreateDialog}
+            onAliasChanged={updateAddresses}
+          />
+        )}
       </>
     );
   }
@@ -112,22 +129,65 @@ export default function Home() {
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Email Tersimpan</h2>
         </div>
         <div className="flex flex-col gap-2">
-          {addresses.map((addr) => (
-            <button
-              key={addr.address}
-              onClick={() => setSelectedAddress(addr.address)}
-              className={`text-left px-4 py-3 rounded-xl transition-all duration-200 border ${
-                selectedAddress === addr.address
-                  ? "bg-primary text-primary-foreground border-primary shadow-md shadow-primary/20"
-                  : "bg-card hover:bg-accent border-border hover:border-accent-foreground/20 text-foreground"
-              }`}
-            >
-              <div className="truncate font-mono text-sm font-medium">{addr.address}</div>
-              <div className={`text-xs mt-1 ${selectedAddress === addr.address ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                {format(new Date(addr.createdAt), "dd MMM yyyy", { locale: id })}
+          {addresses.map((addr) => {
+            const active = selectedAddress === addr.address;
+            return (
+              <div
+                key={addr.address}
+                className={`rounded-xl border transition-all duration-200 flex items-stretch ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary shadow-md"
+                    : "bg-card hover:bg-accent border-border text-foreground"
+                }`}
+              >
+                <button
+                  onClick={() => setSelectedAddress(addr.address)}
+                  className="flex-1 text-left px-4 py-3 min-w-0"
+                  data-testid={`button-select-${addr.address}`}
+                >
+                  {addr.alias && (
+                    <div
+                      className={`text-xs font-semibold truncate mb-0.5 ${
+                        active ? "text-primary-foreground" : "text-foreground"
+                      }`}
+                    >
+                      {addr.alias}
+                    </div>
+                  )}
+                  <div className="truncate font-mono text-sm font-medium">
+                    {addr.address}
+                  </div>
+                  <div
+                    className={`text-xs mt-1 ${
+                      active
+                        ? "text-primary-foreground/70"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    {format(new Date(addr.createdAt), "dd MMM yyyy", {
+                      locale: id,
+                    })}
+                  </div>
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActionsAddress(addr.address);
+                    setActionsOpen(true);
+                  }}
+                  className={`shrink-0 px-2.5 flex items-center justify-center rounded-r-xl transition-colors ${
+                    active
+                      ? "hover:bg-primary-foreground/15"
+                      : "hover:bg-accent-foreground/10"
+                  }`}
+                  aria-label="Tindakan lainnya"
+                  data-testid={`button-actions-${addr.address}`}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </button>
               </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
         <Button
           variant="outline"
@@ -156,11 +216,25 @@ export default function Home() {
                 {selectedAddress}
               </div>
               <div className="flex items-center gap-2">
-                <Button variant={isCopied ? "default" : "secondary"} size="icon" onClick={handleCopy} className="h-12 w-12 rounded-xl transition-all">
+                <Button variant={isCopied ? "default" : "secondary"} size="icon" onClick={handleCopy} className="h-12 w-12 rounded-xl transition-all" data-testid="button-copy-main">
                   {isCopied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
                 </Button>
-                <Button variant="outline" size="icon" onClick={() => refetch()} className="h-12 w-12 rounded-xl bg-card">
-                  <RefreshCw className={`w-5 h-5 ${isPolling ? "animate-spin text-primary" : ""}`} />
+                <Button variant="outline" size="icon" onClick={() => refetch()} className="h-12 w-12 rounded-xl bg-card" data-testid="button-refresh">
+                  <RefreshCw className={`w-5 h-5 ${isPolling ? "animate-spin" : ""}`} />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => {
+                    if (!selectedAddress) return;
+                    setActionsAddress(selectedAddress);
+                    setActionsOpen(true);
+                  }}
+                  className="h-12 w-12 rounded-xl bg-card"
+                  data-testid="button-more-actions"
+                  aria-label="Tindakan lainnya"
+                >
+                  <MoreHorizontal className="w-5 h-5" />
                 </Button>
               </div>
             </div>
@@ -257,6 +331,25 @@ export default function Home() {
         isPending={isGenerating}
         errorMessage={createError}
       />
+
+      {actionsAddress && (
+        <AddressActionsDialog
+          open={actionsOpen}
+          onOpenChange={setActionsOpen}
+          address={actionsAddress}
+          onCopy={() => {
+            navigator.clipboard.writeText(actionsAddress);
+            setIsCopied(true);
+            toast({
+              title: "Berhasil disalin",
+              description: "Alamat email telah disalin.",
+            });
+            setTimeout(() => setIsCopied(false), 2000);
+          }}
+          onCreateNew={openCreateDialog}
+          onAliasChanged={updateAddresses}
+        />
+      )}
     </div>
   );
 }
