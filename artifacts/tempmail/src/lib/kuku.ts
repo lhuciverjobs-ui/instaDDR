@@ -1,0 +1,116 @@
+export interface KukuSession {
+  cookie: string;
+  csrf: string;
+}
+
+export interface KukuAddress {
+  address: string;
+  createdAt: string;
+}
+
+export interface KukuMailMeta {
+  num: string;
+  key: string;
+  from: string;
+  subject: string;
+  preview: string;
+  receivedAt: string;
+  unread: boolean;
+}
+
+export interface KukuInboxResponse {
+  address: string;
+  count: number;
+  empty: boolean;
+  mails: KukuMailMeta[];
+}
+
+export interface KukuMailDetail {
+  num: string;
+  key: string;
+  html: string;
+}
+
+const SESSION_KEY = "kuku.session";
+const ADDRESSES_KEY = "kuku.addresses";
+
+const baseUrl = import.meta.env.BASE_URL.replace(/\/$/, "");
+
+export function getSession(): KukuSession | null {
+  try {
+    const data = localStorage.getItem(SESSION_KEY);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setSession(session: KukuSession) {
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+}
+
+export function getAddresses(): KukuAddress[] {
+  try {
+    const data = localStorage.getItem(ADDRESSES_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+function addAddress(address: string) {
+  const current = getAddresses();
+  const entry = { address, createdAt: new Date().toISOString() };
+  localStorage.setItem(ADDRESSES_KEY, JSON.stringify([entry, ...current]));
+}
+
+async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  const session = getSession();
+  const headers = new Headers(options.headers);
+  if (session) {
+    headers.set("x-kuku-session", JSON.stringify(session));
+  }
+  headers.set("Content-Type", "application/json");
+
+  const res = await fetch(`${baseUrl}/api/kuku${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (!res.ok) {
+    throw new Error(`API error: ${res.status}`);
+  }
+
+  return res.json();
+}
+
+export async function bootstrapSession(): Promise<KukuSession> {
+  let session = getSession();
+  if (!session) {
+    const data = await apiFetch<{ session: KukuSession }>("/session", {
+      method: "POST",
+    });
+    session = data.session;
+    setSession(session);
+  }
+  return session;
+}
+
+export async function generateAddress(): Promise<KukuAddress> {
+  let session = await bootstrapSession();
+  const data = await apiFetch<{ address: string; session: KukuSession }>("/address", {
+    method: "POST",
+    body: JSON.stringify({ session }),
+  });
+  setSession(data.session);
+  addAddress(data.address);
+  return { address: data.address, createdAt: new Date().toISOString() };
+}
+
+export async function fetchInbox(address: string): Promise<KukuInboxResponse> {
+  return apiFetch<KukuInboxResponse>(`/inbox?address=${encodeURIComponent(address)}`);
+}
+
+export async function fetchMailDetail(num: string, key: string): Promise<KukuMailDetail> {
+  return apiFetch<KukuMailDetail>(`/mail?num=${encodeURIComponent(num)}&key=${encodeURIComponent(key)}`);
+}
