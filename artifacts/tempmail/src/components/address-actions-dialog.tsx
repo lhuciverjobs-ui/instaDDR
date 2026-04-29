@@ -17,6 +17,7 @@ import {
   Check,
   X,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import QRCode from "qrcode";
 import { setAddressAlias, getAddresses } from "@/lib/kuku";
@@ -31,6 +32,7 @@ interface AddressActionsDialogProps {
   onCopy: () => void;
   onCreateNew: () => void;
   onAliasChanged?: () => void;
+  onRemove?: () => void;
 }
 
 const PASSWORD_CHARS =
@@ -55,6 +57,7 @@ export function AddressActionsDialog({
   onCopy,
   onCreateNew,
   onAliasChanged,
+  onRemove,
 }: AddressActionsDialogProps) {
   const [mode, setMode] = useState<Mode>("menu");
   const [aliasValue, setAliasValue] = useState("");
@@ -203,6 +206,14 @@ export function AddressActionsDialog({
                 onClick={() => setMode("password")}
                 testId="action-password"
               />
+              {onRemove && (
+                <ActionButton
+                  icon={Trash2}
+                  label="Hapus tempmail dari daftar"
+                  onClick={onRemove}
+                  testId="action-remove-address"
+                />
+              )}
             </div>
             <div className="flex justify-end mt-5">
               <Button

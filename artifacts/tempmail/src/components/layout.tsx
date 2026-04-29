@@ -1,6 +1,8 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Mail } from "lucide-react";
+import { LogOut, Mail } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { logout } from "@/lib/auth";
 
 export function Layout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
@@ -43,6 +45,18 @@ export function Layout({ children }: { children: ReactNode }) {
             >
               Tentang
             </Link>
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Logout"
+              aria-label="Logout"
+              onClick={async () => {
+                await logout();
+                window.location.reload();
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           </nav>
         </div>
       </header>

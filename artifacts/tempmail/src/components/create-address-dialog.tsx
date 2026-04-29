@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Search, Check, AlertCircle, Shuffle } from "lucide-react";
+import { Loader2, Search, Check, AlertCircle, Shuffle, ExternalLink } from "lucide-react";
 import { useDomains } from "@/hooks/use-kuku";
 
 interface CreateAddressDialogProps {
@@ -29,7 +29,7 @@ export function CreateAddressDialog({
   isPending,
   errorMessage,
 }: CreateAddressDialogProps) {
-  const { data: domains, isLoading, isError, refetch } = useDomains();
+  const { data: domains, isLoading, isError, error, refetch } = useDomains();
   const [search, setSearch] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [username, setUsername] = useState("");
@@ -51,6 +51,10 @@ export function CreateAddressDialog({
 
   const usernameValid =
     username === "" || /^[a-z0-9._-]{1,32}$/i.test(username);
+  const domainErrorMessage =
+    error instanceof Error ? error.message : "Gagal memuat daftar domain";
+  const verificationBlocked =
+    isError && /turnstile|verifikasi|cloudflare/i.test(domainErrorMessage);
 
   const handleCreate = (mode: "random" | "selected") => {
     if (mode === "random") {
@@ -129,12 +133,24 @@ export function CreateAddressDialog({
           ) : isError ? (
             <div className="h-full flex flex-col items-center justify-center py-12 gap-3 text-center">
               <AlertCircle className="w-8 h-8 text-destructive" />
-              <p className="text-sm text-muted-foreground">
-                Gagal memuat daftar domain
+              <p className="text-sm text-muted-foreground max-w-sm">
+                {domainErrorMessage}
               </p>
-              <Button variant="outline" size="sm" onClick={() => refetch()}>
-                Coba Lagi
-              </Button>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                {verificationBlocked && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open("https://m.kuku.lu/", "_blank", "noopener,noreferrer")}
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    Buka Kuku.lu
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => refetch()}>
+                  Coba Lagi
+                </Button>
+              </div>
             </div>
           ) : filtered.length === 0 ? (
             <div className="h-full flex items-center justify-center py-12">
@@ -192,8 +208,9 @@ export function CreateAddressDialog({
             variant="outline"
             data-testid="button-create-random"
             onClick={() => handleCreate("random")}
-            disabled={isPending}
+            disabled={isPending || verificationBlocked}
             className="sm:mr-auto"
+            title={verificationBlocked ? "Kuku.lu meminta verifikasi manual dulu" : undefined}
           >
             {isPending ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />

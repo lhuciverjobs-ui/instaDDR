@@ -6,6 +6,7 @@ import {
   fetchInbox,
   fetchMailDetail,
   fetchDomains,
+  deleteMail,
   getAddresses,
   KukuAddress,
   GenerateAddressOptions,
@@ -61,5 +62,18 @@ export function useMailDetail(num: string | undefined, key: string | undefined) 
     queryKey: ["kuku", "mail", num, key],
     queryFn: () => fetchMailDetail(num!, key!),
     enabled: !!num && !!key,
+  });
+}
+
+export function useDeleteMail(address: string | undefined, onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (num: string) => deleteMail(num),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["kuku", "inbox", address] });
+      queryClient.invalidateQueries({ queryKey: ["kuku", "mail"] });
+      onSuccess?.();
+    },
   });
 }

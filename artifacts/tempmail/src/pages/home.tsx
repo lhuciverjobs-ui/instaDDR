@@ -1,15 +1,16 @@
 import { useState, useEffect } from "react";
-import { useKukuInit, useGenerateAddress, useInbox } from "@/hooks/use-kuku";
+import { useKukuInit, useGenerateAddress, useInbox, useDeleteMail } from "@/hooks/use-kuku";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Copy, RefreshCw, Plus, Check, Inbox, ChevronRight, MoreHorizontal } from "lucide-react";
+import { Loader2, Copy, RefreshCw, Plus, Check, Inbox, ChevronRight, MoreHorizontal, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import { MailDetail } from "@/components/mail-detail";
 import { CreateAddressDialog } from "@/components/create-address-dialog";
 import { AddressActionsDialog } from "@/components/address-actions-dialog";
+import { removeAddress } from "@/lib/kuku";
 
 export default function Home() {
   const { ready, addresses, updateAddresses } = useKukuInit();
@@ -53,6 +54,36 @@ export default function Home() {
   };
 
   const { data: inboxData, isFetching: isPolling, refetch } = useInbox(selectedAddress);
+  const { mutate: removeMail, isPending: isDeletingMail } = useDeleteMail(selectedAddress, () => {
+    setSelectedMail(null);
+    toast({
+      title: "Email dihapus",
+      description: "Pesan telah dihapus dari kotak masuk.",
+    });
+    refetch();
+  });
+
+  const handleDeleteMail = (num: string, closeDetail = false) => {
+    const ok = window.confirm("Hapus email ini dari kotak masuk?");
+    if (!ok) return;
+    removeMail(num, {
+      onError: (err) => {
+        toast({
+          title: "Gagal menghapus email",
+          description: err instanceof Error ? err.message : "Silakan coba lagi.",
+          variant: "destructive",
+        });
+      },
+      onSuccess: () => {
+        if (closeDetail) setSelectedMail(null);
+      },
+    });
+  };
+
+  const handleDeleteSelectedMail = () => {
+    if (!selectedMail) return;
+    handleDeleteMail(selectedMail.num, true);
+  };
 
   const handleCopy = () => {
     if (!selectedAddress) return;
@@ -63,6 +94,22 @@ export default function Home() {
       description: "Alamat email telah disalin ke clipboard.",
     });
     setTimeout(() => setIsCopied(false), 2000);
+  };
+
+  const handleRemoveAddress = (address: string) => {
+    const ok = window.confirm(`Hapus ${address} dari daftar tempmail tersimpan?`);
+    if (!ok) return;
+    removeAddress(address);
+    updateAddresses();
+    setSelectedMail(null);
+    if (selectedAddress === address) {
+      const remaining = addresses.filter((a) => a.address !== address);
+      setSelectedAddress(remaining[0]?.address);
+    }
+    toast({
+      title: "Tempmail dihapus",
+      description: "Alamat dihapus dari daftar tersimpan.",
+    });
   };
 
   if (!ready) {
@@ -185,6 +232,22 @@ export default function Home() {
                 >
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveAddress(addr.address);
+                  }}
+                  className={`shrink-0 px-2.5 flex items-center justify-center rounded-r-xl transition-colors ${
+                    active
+                      ? "hover:bg-primary-foreground/15"
+                      : "hover:bg-accent-foreground/10"
+                  }`}
+                  aria-label="Hapus tempmail"
+                  title="Hapus tempmail"
+                  data-testid={`button-remove-address-${addr.address}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
             );
           })}
@@ -279,33 +342,49 @@ export default function Home() {
                     }
 
                     return (
-                      <motion.button
+                      <motion.div
                         key={mail.key}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, height: 0 }}
-                        onClick={() => setSelectedMail({ num: mail.num, key: mail.key, subject: mail.subject, from: mail.from, receivedAt: mail.receivedAt })}
-                        className="w-full text-left p-4 sm:p-6 hover:bg-accent/50 transition-colors flex items-start gap-4 group"
+                        className="w-full p-4 sm:p-6 hover:bg-accent/50 transition-colors flex items-start gap-4 group"
                       >
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-primary font-bold">
-                          {mail.from.charAt(0).toUpperCase() || "?"}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-semibold text-foreground truncate">{mail.from}</span>
-                            <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{formattedDate}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMail({ num: mail.num, key: mail.key, subject: mail.subject, from: mail.from, receivedAt: mail.receivedAt })}
+                          className="flex flex-1 items-start gap-4 text-left min-w-0"
+                        >
+                          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-primary font-bold">
+                            {mail.from.charAt(0).toUpperCase() || "?"}
                           </div>
-                          <h4 className={`font-medium text-sm mb-1 truncate ${mail.unread ? "text-foreground" : "text-muted-foreground"}`}>
-                            {mail.subject || "Tanpa Subjek"}
-                          </h4>
-                          <p className="text-sm text-muted-foreground line-clamp-1">
-                            {mail.preview || "Tidak ada pratinjau..."}
-                          </p>
-                        </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <span className="font-semibold text-foreground truncate">{mail.from}</span>
+                              <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">{formattedDate}</span>
+                            </div>
+                            <h4 className={`font-medium text-sm mb-1 truncate ${mail.unread ? "text-foreground" : "text-muted-foreground"}`}>
+                              {mail.subject || "Tanpa Subjek"}
+                            </h4>
+                            <p className="text-sm text-muted-foreground line-clamp-1">
+                              {mail.preview || "Tidak ada pratinjau..."}
+                            </p>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMail(mail.num)}
+                          disabled={isDeletingMail}
+                          className="h-9 w-9 rounded-md border border-border bg-background flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
+                          aria-label="Hapus email"
+                          title="Hapus email"
+                          data-testid={`button-delete-mail-${mail.num}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                         <div className="opacity-0 group-hover:opacity-100 transition-opacity self-center shrink-0 text-muted-foreground">
                           <ChevronRight className="w-5 h-5" />
                         </div>
-                      </motion.button>
+                      </motion.div>
                     );
                   })}
                 </AnimatePresence>
@@ -322,6 +401,8 @@ export default function Home() {
         from={selectedMail?.from || ""}
         receivedAt={selectedMail?.receivedAt || ""}
         onClose={() => setSelectedMail(null)}
+        onDelete={handleDeleteSelectedMail}
+        isDeleting={isDeletingMail}
       />
 
       <CreateAddressDialog
@@ -348,6 +429,10 @@ export default function Home() {
           }}
           onCreateNew={openCreateDialog}
           onAliasChanged={updateAddresses}
+          onRemove={() => {
+            handleRemoveAddress(actionsAddress);
+            setActionsOpen(false);
+          }}
         />
       )}
     </div>

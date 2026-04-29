@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Copy, Check, Terminal, Code2, Zap } from "lucide-react";
 
 interface Endpoint {
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "DELETE";
   path: string;
   title: string;
   description: string;
@@ -88,15 +88,12 @@ export default function ApiDocs() {
       path: "/api/kuku/session",
       title: "Mulai Sesi",
       description:
-        "Membuat sesi baru dan mengembalikan kuki + token CSRF yang harus dikirim ulang di permintaan berikutnya.",
+        "Membuat sesi server-side. Browser menerima cookie httpOnly, sementara token Kuku tidak diekspos ke JavaScript.",
       response: {
-        session: {
-          cookie: "cookie_csrf_token=...; cookie_sessionhash=...",
-          csrf: "abc123def456",
-        },
+        ok: true,
       },
       notes: [
-        "Simpan objek `session` dan kirim balik di header `x-kuku-session` sebagai JSON pada endpoint lain.",
+        "Gunakan cookie yang dikirim browser otomatis. Tidak perlu menyimpan token Kuku di localStorage/sessionStorage.",
       ],
     },
     {
@@ -108,19 +105,18 @@ export default function ApiDocs() {
       request: {
         headers: { "Content-Type": "application/json" },
         body: {
-          session: { cookie: "...", csrf: "..." },
           domain: "hamham.uk",
           username: "halo123",
         },
       },
       response: {
         address: "halo123@hamham.uk",
-        session: { cookie: "...", csrf: "..." },
       },
       notes: [
         "`domain` dan `username` opsional. Tanpa keduanya = acak.",
-        "Hanya `username` saja akan ditolak — harus ada `domain` juga.",
+        "Hanya `username` saja akan ditolak - harus ada `domain` juga.",
         "Username diizinkan: huruf, angka, titik, underscore, hyphen (max 32 karakter).",
+        "Jika Kuku.lu meminta Cloudflare Turnstile, server akan mengembalikan 409. Untuk local test, isi KUKU_COOKIE dari browser yang sudah terverifikasi.",
       ],
     },
     {
@@ -144,11 +140,6 @@ export default function ApiDocs() {
       title: "Ambil Kotak Masuk",
       description:
         "Mengambil daftar email untuk alamat tertentu. Polling endpoint ini setiap beberapa detik untuk update real-time.",
-      request: {
-        headers: {
-          "x-kuku-session": '{"cookie":"...","csrf":"..."}',
-        },
-      },
       response: {
         address: "halo@hamham.uk",
         count: 1,
@@ -172,46 +163,63 @@ export default function ApiDocs() {
       title: "Detail Pesan",
       description:
         "Mengambil HTML lengkap dari satu pesan. Render di sandbox untuk keamanan.",
-      request: {
-        headers: {
-          "x-kuku-session": '{"cookie":"...","csrf":"..."}',
-        },
-      },
       response: {
         num: "12345",
         key: "abcdef",
         html: "<html>...</html>",
       },
     },
+    {
+      method: "DELETE",
+      path: "/api/kuku/mail?num=12345",
+      title: "Hapus Pesan",
+      description:
+        "Menghapus satu pesan dari kotak masuk Kuku untuk session aktif.",
+      response: {
+        ok: true,
+        message: "OK",
+      },
+      notes: [
+        "Butuh session Kuku yang sama dengan inbox aktif.",
+        "Penghapusan alamat tempmail di UI hanya menghapus daftar lokal browser, bukan akun/alamat upstream Kuku.",
+      ],
+    },
   ];
 
-  const curlExample = `# 1. Mulai sesi
-curl -X POST ${apiBase}/session
+  const curlExample = `# 1. Login aplikasi dulu untuk mendapatkan cookie app_auth
+curl -X POST ${window.location.origin}/api/auth/login \\
+  -H "Content-Type: application/json" \\
+  -b app-cookies.txt -c app-cookies.txt \\
+  -d '{"password":"dev-password"}'
 
-# 2. Buat alamat (acak)
+# 2. Mulai sesi Kuku server-side
+curl -X POST ${apiBase}/session -b app-cookies.txt -c app-cookies.txt
+
+# 3. Buat alamat (acak)
 curl -X POST ${apiBase}/address \\
   -H "Content-Type: application/json" \\
-  -d '{"session":{"cookie":"...","csrf":"..."}}'
+  -b app-cookies.txt -c app-cookies.txt \\
+  -d '{}'
 
-# 3. Buat alamat (custom)
+# 4. Buat alamat (custom)
 curl -X POST ${apiBase}/address \\
   -H "Content-Type: application/json" \\
-  -d '{"session":{...},"domain":"hamham.uk","username":"halo"}'
+  -b app-cookies.txt -c app-cookies.txt \\
+  -d '{"domain":"hamham.uk","username":"halo"}'
 
-# 4. Cek inbox
-curl "${apiBase}/inbox?address=halo@hamham.uk" \\
-  -H 'x-kuku-session: {"cookie":"...","csrf":"..."}'`;
+# 5. Cek inbox
+curl "${apiBase}/inbox?address=halo@hamham.uk" -b app-cookies.txt`;
 
-  const jsExample = `// Inisialisasi sesi
-const sess = await fetch("${apiBase}/session", { method: "POST" })
-  .then(r => r.json());
+  const jsExample = `// Halaman web sudah login melalui AuthGate.
+// Inisialisasi sesi Kuku server-side
+await fetch("${apiBase}/session", { method: "POST", credentials: "include" });
 
 // Buat alamat baru
-const { address, session } = await fetch("${apiBase}/address", {
+const { address } = await fetch("${apiBase}/address", {
   method: "POST",
+  credentials: "include",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
-    session: sess.session,
     domain: "hamham.uk",      // opsional
     username: "halo"          // opsional
   })
@@ -223,10 +231,10 @@ console.log("Alamat baru:", address);
 setInterval(async () => {
   const inbox = await fetch(
     \`${apiBase}/inbox?address=\${address}\`,
-    { headers: { "x-kuku-session": JSON.stringify(session) } }
+    { credentials: "include" }
   ).then(r => r.json());
 
-  inbox.mails.forEach(m => console.log(m.from, "—", m.subject));
+  inbox.mails.forEach(m => console.log(m.from, "-", m.subject));
 }, 8000);`;
 
   const handlePing = async () => {
@@ -254,9 +262,9 @@ setInterval(async () => {
           Dokumentasi API
         </h1>
         <p className="text-muted-foreground max-w-2xl">
-          Akses InstaMail secara terprogram. Semua endpoint terbuka, mendukung
-          CORS, dan siap dipanggil dari skrip Anda. Cocok untuk otomatisasi,
-          bot, atau testing.
+          Akses InstaMail secara terprogram setelah login aplikasi. Token Kuku
+          disimpan server-side di cookie httpOnly, dan origin request dibatasi
+          lewat konfigurasi backend.
         </p>
       </div>
 
@@ -374,9 +382,11 @@ setInterval(async () => {
       <Card className="p-5 bg-muted/40">
         <h3 className="font-semibold mb-2">Catatan</h3>
         <ul className="text-sm text-muted-foreground space-y-1.5 list-disc list-inside">
-          <li>Tidak ada autentikasi — gunakan dengan bijak. Jangan spam.</li>
-          <li>CORS terbuka untuk semua origin.</li>
-          <li>Sesi dari kuku.lu valid selama beberapa hari.</li>
+          <li>Gunakan APP_PASSWORD yang kuat sebelum deploy publik.</li>
+          <li>Endpoint Kuku dilindungi login aplikasi dan cookie httpOnly.</li>
+          <li>CORS dibatasi lewat ALLOWED_ORIGINS di backend.</li>
+          <li>Session Kuku disimpan in-memory; gunakan storage eksternal kalau deploy multi-instance.</li>
+          <li>Kuku.lu dapat meminta Cloudflare Turnstile untuk session baru.</li>
           <li>Email otomatis dihapus dari kuku.lu setelah 30 hari.</li>
         </ul>
       </Card>
